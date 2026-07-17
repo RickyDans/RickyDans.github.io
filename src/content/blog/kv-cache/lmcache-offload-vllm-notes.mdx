@@ -1,0 +1,102 @@
+---
+title: "LMCache Offload 与 vLLM KV Transfer 启动笔记"
+description: "整理 LMCacheConnectorV1、layerwise KV transfer、CPU offload 和 TP>1 场景下的启动方式与注意点。"
+pubDate: 2026-07-17
+category: "KV Cache"
+categorySlug: "kv-cache"
+tags: ["KV Cache", "LMCache", "vLLM", "Offload"]
+featured: true
+series: "KV Cache Benchmark"
+seriesSlug: "kv-cache-benchmark"
+readingTime: "10 min"
+---
+
+LMCache 的核心目标是让 KV Cache 可以在请求、实例甚至机器之间被复用。实际测试时，第一步不是追求命中率，而是先把 connector、配置文件、张量并行和 offload 路径跑通。
+
+## 最小启动
+
+单卡或默认并行场景下，可以先用最小参数验证 `LMCacheConnectorV1` 是否接入成功。
+
+```bash
+vllm serve /home/models/Qwen3-8B \
+  --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config":{"use_layerwise":true,"lmcache.use_layerwise":true}}'
+```
+
+对于更大的模型，例如 Qwen2.5-32B-Instruct，可以同时打开 TP：
+
+```bash
+vllm serve /home/models/Qwen2.5-32B-Instruct \
+  --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config":{"use_layerwise":true,"lmcache.use_layerwise":true}}' \
+  --tensor-parallel-size 4
+```
+
+这里 `kv_role: kv_both` 代表当前实例同时具备生产和消费 KV 的角色。做 benchmark 时建议先用 `kv_both` 简化拓扑，再拆成 producer / consumer。
+
+## Offload 配置
+
+CPU offload 或本地缓存需要通过 LMCache 配置文件控制。公开记录里不要写真实用户路径，可以用 `<config-path>` 替代。
+
+```bash
+LMCACHE_USE_EXPERIMENTAL=True \
+LMCACHE_CONFIG_FILE=<config-path>/lmcache_offload.yaml \
+vllm serve /home/models/Qwen3-8B \
+  --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config":{"use_layerwise":true,"lmcache.use_layerwise":true}}'
+```
+
+TP=4 时：
+
+```bash
+LMCACHE_CONFIG_FILE=<config-path>/lmcache_offload.yaml \
+vllm serve /home/models/Qwen2.5-32B-Instruct \
+  --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_connector_extra_config":{"use_layerwise":true,"lmcache.use_layerwise":true}}' \
+  --tensor-parallel-size 4
+```
+
+## Controller 与实例
+
+多实例实验里，可以先启动 controller，再启动带有固定 `PYTHONHASHSEED` 的 vLLM 实例。固定 hash seed 的目的，是减少测试过程中分片和哈希行为带来的不可解释差异。
+
+```bash
+PYTHONHASHSEED=123 lmcache_controller \
+  --host localhost \
+  --port 9000 \
+  --monitor-ports '{"pull": 8300, "reply": 8400, "heartbeat": 8082}'
+```
+
+示例实例：
+
+```bash
+PYTHONHASHSEED=0 \
+LMCACHE_CHUNK_SIZE=256 \
+LMCACHE_LOCAL_CPU=True \
+LMCACHE_USE_EXPERIMENTAL=True \
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
+LMCACHE_CONFIG_FILE=<config-path>/lmcache_instance1_tp4.yaml \
+vllm serve /home/models/Qwen2.5-32B-Instruct \
+  --port 8010 \
+  --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}' \
+  --tensor-parallel-size 4
+```
+
+## TP>1 的注意点
+
+TP>1 时最容易出现的问题，是每个 rank 对 KV layout、chunk、connector 状态的理解不一致。症状可能表现为：
+
+- 启动阶段通过，但第一个请求卡住。
+- partial hit 后延迟反而升高。
+- 某些 rank 没有对应 KV 或 metadata。
+- controller 端能看到心跳，但数据路径没有实际收益。
+
+所以 TP>1 的实验建议分三步：
+
+1. 先不打开 offload，只验证 vLLM 原生 TP 推理。
+2. 再打开 LMCache connector，但只跑固定短 prompt。
+3. 最后加入长 prefix、并发请求和 offload。
+
+## vLLM 自身 Offload
+
+vLLM 自身也有 KV offload 相关参数。比如 `kv-offload-size` 表示为 KV offload 预留的容量，测试时需要明确单位和生效范围。不要把 vLLM 原生 offload 和 LMCache offload 混在一个实验里一起改，否则很难判断收益来自哪里。
+
+## 小结
+
+LMCache benchmark 的第一阶段应该像系统联调：确认 connector 接入、controller 可见、TP layout 一致、offload 路径可控。只有这些基础稳定，hit rate、TTFT、尾延迟这些指标才有解释价值。

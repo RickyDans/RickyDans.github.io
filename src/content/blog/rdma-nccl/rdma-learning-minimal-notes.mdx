@@ -1,0 +1,70 @@
+---
+title: "RDMA 学习札记：QP、MR 与 RoCE / IB"
+description: "把 RDMA 入门笔记整理成几个最小概念：IB、RoCE、QP、MR，以及做推理系统通信调试时应该警惕的假设。"
+pubDate: 2026-07-17
+category: "RDMA / NCCL / 通信"
+categorySlug: "rdma-nccl"
+tags: ["RDMA", "RoCE", "InfiniBand", "QP"]
+featured: false
+series: "CUDA 通信基础"
+seriesSlug: "cuda-communication"
+readingTime: "6 min"
+---
+
+RDMA 的关键不是某一个 API，而是一种绕过传统内核拷贝路径、让远端内存访问更接近硬件的通信思路。常见实现主要有 InfiniBand 和 RoCE。
+
+## IB 与 RoCE
+
+InfiniBand 是完整的网络体系，硬件、链路层、交换设备和协议栈都围绕高性能通信设计。RoCE 则是在以太网上承载 RDMA 语义，更容易进入已有数据中心网络，但也更依赖 PFC、ECN、拥塞控制和交换机配置。
+
+对推理系统来说，选 IB 还是 RoCE 不只是性能问题，还会影响：
+
+- 网络可观测性。
+- 故障定位方式。
+- 多租户隔离。
+- 与 Kubernetes / CNI / 容器运行时的集成复杂度。
+
+## QP：发送队列与接收队列
+
+QP 是 Queue Pair，也就是一对队列：
+
+```text
+QP = SQ + RQ
+```
+
+其中 SQ 是 Send Queue，RQ 是 Receive Queue。应用提交 work request，网卡消费队列并完成实际传输。调 RDMA 时，很多看似“网络慢”的问题，最后会落到 QP 数量、队列深度、completion 处理、polling 策略这些细节上。
+
+## MR 与地址假设
+
+MR 是 Memory Region。注册 MR 后，网卡才能合法访问对应内存区域。
+
+调试时不要把 `mr->addr` 机械当成“用户 buffer 起点的唯一真相”。在真实系统里，buffer 生命周期、offset、allocator、分片和封装结构都可能让这个地址和业务层看到的对象边界不完全一致。
+
+更稳妥的方式是把下面几件事一起记录：
+
+- 注册的 base address。
+- 实际传输 offset。
+- buffer 长度。
+- local key / remote key。
+- 上层对象或 chunk 的逻辑编号。
+
+## Ticket 语义
+
+很多系统会引入 ticket、handle 或 descriptor 来描述一次远端访问。ticket 通常不是数据本身，而是访问数据所需要的元信息集合，例如地址、长度、key、版本或路由信息。
+
+做 KV Cache 传输时，这类 ticket 的价值在于把“找到 KV”与“传输 KV”解耦。上层只需要拿到一个稳定描述，底层可以选择本机内存、CPU offload、Mooncake store 或 RDMA 路径。
+
+## 推理系统里的 RDMA 调试
+
+在 vLLM / LMCache / Mooncake 这种组合里，RDMA 问题经常会伪装成 KV Cache 问题：
+
+- KV miss 可能是元数据没同步。
+- 命中后延迟高，可能是传输路径或 QP 配置问题。
+- partial hit 后收益不稳定，可能是 chunk 粒度和网络传输成本不匹配。
+- 日志里看不到远端路径，可能是网卡过滤、metadata server 或路由配置没有生效。
+
+所以 RDMA 调试不应该只看带宽。更重要的是看一次请求的完整路径：metadata 查找、ticket 生成、RDMA 传输、completion、KV 重新挂载，以及 vLLM 调度器什么时候继续 decode。
+
+## 小结
+
+RDMA 的概念很少，但每个概念都容易穿透到系统实现。先把 QP、MR、ticket 和 RoCE / IB 的边界讲清楚，再去看 NCCL、Mooncake 或 KV Cache 传输，会更容易定位问题。

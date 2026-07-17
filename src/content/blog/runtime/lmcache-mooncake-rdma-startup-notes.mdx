@@ -1,0 +1,161 @@
+---
+title: "LMCache + Mooncake RDMA 启动与压测记录"
+description: "记录 Mooncake master/client、LMCache 配置、vLLM 双实例和 RDMA 环境变量的最小联调路径。"
+pubDate: 2026-07-17
+category: "vLLM / LMCache / Mooncake"
+categorySlug: "runtime"
+tags: ["LMCache", "Mooncake", "RDMA", "vLLM"]
+featured: true
+series: "KV Cache Benchmark"
+seriesSlug: "kv-cache-benchmark"
+readingTime: "11 min"
+---
+
+LMCache + Mooncake 的测试可以理解为三段链路：vLLM 负责推理和 KV 生产消费，LMCache 负责 KV 管理，Mooncake 负责底层存储和 RDMA 传输。联调时不要一上来就跑复杂 workload，先让每段链路都有可观测日志。
+
+## 日志与环境变量
+
+先打开必要日志：
+
+```bash
+export LMCACHE_LOG_LEVEL=DEBUG
+export MC_YLT_LOG_LEVEL=debug
+export MC_LOG_LEVEL=INFO
+export MC_TRACE_ROUTE=1
+export MC_LOG_DIR=~/tmp/test/mooncake-logs
+mkdir -p ~/tmp/test/mooncake-logs
+```
+
+如果运行环境依赖 Conda 里的动态库，需要补上：
+
+```bash
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH}"
+```
+
+RDMA 网卡和 QP 数可以先显式控制：
+
+```bash
+export MC_MS_FILTERS=mlx5_0,mlx5_1
+export MC_NUM_QP_PER_EP=1
+```
+
+注意：过滤网卡能帮助定位路径，但不一定提升效率；QP 数也会影响延迟，需要独立测试，不要和 workload 变化混在一起。
+
+## Mooncake Master
+
+先启动 master，并打开 HTTP metadata server：
+
+```bash
+mooncake_master \
+  --enable_http_metadata_server=true \
+  --http_metadata_server_port=8080 \
+  -v=1
+```
+
+如果要启动独立 store：
+
+```bash
+mooncake_client \
+  --host 0.0.0.0 \
+  --port 50052 \
+  --global_segment_size 200GB \
+  --protocol rdma
+```
+
+连接到 master 和 metadata server：
+
+```bash
+mooncake_client \
+  --host 0.0.0.0 \
+  --port 50052 \
+  --global_segment_size 200GB \
+  --protocol rdma \
+  --master_server_address <master-ip>:50051 \
+  --metadata_server "http://<master-ip>:8080/metadata" \
+  --v=1 \
+  --logtostderr=1
+```
+
+公开博客里建议把真实 IP 替换成 `<master-ip>`，避免把内网拓扑写进公开仓库。
+
+## vLLM 双实例
+
+实例 1：
+
+```bash
+PYTHONHASHSEED=0 \
+LMCACHE_CONFIG_FILE=<config-path>/lmcache_mooncake.yaml \
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
+vllm serve /home/models/Qwen2.5-32B-Instruct \
+  --port 8010 \
+  --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}' \
+  --tensor-parallel-size 4 \
+  --gpu-memory-utilization 0.85
+```
+
+实例 2：
+
+```bash
+PYTHONHASHSEED=0 \
+LMCACHE_CONFIG_FILE=<config-path>/lmcache_mooncake.yaml \
+CUDA_VISIBLE_DEVICES=4,5,6,7 \
+vllm serve /home/models/Qwen2.5-32B-Instruct \
+  --port 8011 \
+  --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}' \
+  --tensor-parallel-size 4 \
+  --gpu-memory-utilization 0.85
+```
+
+## 纯 vLLM Baseline
+
+所有 KV Cache 复用实验都应该有一个纯 vLLM baseline：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
+vllm serve /home/models/Qwen2.5-32B-Instruct \
+  --port 8010 \
+  --disable-log-stats \
+  --tensor-parallel-size 4 \
+  --gpu-memory-utilization 0.85
+```
+
+```bash
+CUDA_VISIBLE_DEVICES=4,5,6,7 \
+vllm serve /home/models/Qwen2.5-32B-Instruct \
+  --port 8011 \
+  --disable-log-stats \
+  --tensor-parallel-size 4 \
+  --gpu-memory-utilization 0.85
+```
+
+baseline 的作用不是证明 LMCache 一定更快，而是给 TTFT、吞吐、显存占用和尾延迟一个参照系。
+
+## 构造长 Prefix 请求
+
+可以用重复文本构造长 prompt，先观察是否命中、是否触发传输，以及传输耗时是否小于节省的 prefill 时间。
+
+```bash
+curl http://localhost:8010/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "/home/models/Qwen2.5-32B-Instruct",
+    "prompt": "Explain the significance of KV cache in language models. Explain the significance of KV cache in language models.",
+    "max_tokens": 128,
+    "temperature": 0
+  }'
+```
+
+实际压测时可以把 prompt 生成逻辑放到脚本里，避免在 shell 中写超长字符串。
+
+## 观察重点
+
+- `MC_TRACE_ROUTE` 是否能看到预期 RDMA 路径。
+- Mooncake client 是否注册到正确 master。
+- LMCache 是否记录 hit / miss / partial hit。
+- 双实例之间的 KV 传输是否真的发生。
+- 打开 `MC_NUM_QP_PER_EP` 后尾延迟是否变化。
+- 相同 workload 下，LMCache + Mooncake 是否优于纯 vLLM baseline。
+
+## 小结
+
+这套环境的难点不在启动命令，而在变量太多。建议把实验分成 master/client 可用、单实例 connector 可用、双实例可传输、长 prefix 有收益四个阶段。每个阶段只改一个变量，后续结果才有可解释性。

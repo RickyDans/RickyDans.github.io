@@ -1,0 +1,93 @@
+---
+title: "vLLM Docker 与 Qwen3 Reranker 启动记录"
+description: "从容器启动、CUDA 镜像选择、Qwen3 Reranker pooling runner 到常见 vLLM 修复点的一份运行笔记。"
+pubDate: 2026-07-17
+category: "vLLM / LMCache / Mooncake"
+categorySlug: "runtime"
+tags: ["vLLM", "Docker", "Qwen3", "Reranker"]
+featured: true
+series: "vLLM 源码解析"
+seriesSlug: "vllm-source"
+readingTime: "8 min"
+---
+
+这篇整理自一份日常启动记录。原始笔记更像命令备忘录，这里把它改成一份可以复用的检查清单：先进入容器，再确认 CUDA / Python / vLLM 版本，最后按模型类型选择 `serve` 参数。
+
+## 容器启动
+
+最常用的方式是把模型目录挂到容器里，并打开 `--ipc=host`，避免大模型推理时共享内存不足。
+
+```bash
+sudo docker run --runtime nvidia --gpus all -it --rm \
+  -v /home/models:/models \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai:v0.23.0
+```
+
+如果需要 CUDA 12.9 对应镜像，可以换成：
+
+```bash
+sudo docker run --runtime nvidia --gpus all -it --rm \
+  -v /home/models:/models \
+  --ipc=host \
+  --entrypoint /bin/bash \
+  vllm/vllm-openai:v0.23.0-cu129
+```
+
+进入容器后先做三个确认：
+
+```bash
+conda activate 3.13
+vllm --version
+uv pip install torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+```
+
+调试容器网络时，可以直接查容器 IP：
+
+```bash
+docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <container-id>
+```
+
+## Qwen3 Reranker
+
+Qwen3 Reranker 不是普通 chat/completion 模型，启动时需要走 pooling runner，并通过 `hf_overrides` 指定 sequence classification 架构。
+
+```bash
+vllm serve /models/Qwen3-Reranker-0.6B \
+  --runner pooling \
+  --hf_overrides '{"architectures":["Qwen3ForSequenceClassification"],"classifier_from_token":["no","yes"],"is_original_qwen3_reranker":true}' \
+  --chat-template examples/pooling/score/template/qwen3_reranker.jinja
+```
+
+这里最容易踩的点有两个：
+
+- 模板文件要跟 vLLM 版本匹配，否则 score 请求会在解析模板时失败。
+- Reranker 的输出路径和普通生成模型不同，不要沿用 chat template 的假设。
+
+## 内存与结构化输出
+
+Eagle、xgrammar、structured output、DCP 并行组合在一起时，问题往往不是一个单独参数导致的，而是图捕获、显存估计和 attention backend 共同影响。
+
+我的排查顺序通常是：
+
+1. 先固定模型和镜像版本，只改一个启动参数。
+2. 如果是 OOM，优先看 graph capture size 和 Eagle 相关显存计算。
+3. 如果是 structured output crash，先拆掉 Eagle 或 xgrammar 做二分。
+4. 如果 DCP 并行报错，显式指定 attention backend，比如 flashinfer。
+
+## 版本修复点
+
+下面这些提交号是原始排障记录里的定位线索，不建议机械 cherry-pick。更稳妥的做法是先确认当前 vLLM 版本是否已经包含对应修复。
+
+| 问题 | 定位线索 |
+| --- | --- |
+| 打包时缺少 jinja 文件 | `fb8de9e1e5b847add09e8750c2038d70dacacf64` |
+| Eagle 显存计算导致 OOM | `28f5134449fe64e217507be27847b7108dedcc6b` |
+| priority queue 阻塞 | `0f23efebcce5be00f7240d5727f811e20320918b` |
+| Eagle + xgrammar structured output crash | `28f5134449fe64e217507be27847b7108dedcc6b` |
+| Eagle graph capture size 异常 | `37103dfa56bab27dd5a1f13f66f642315eb02c19` |
+
+## 小结
+
+启动命令本身并不复杂，真正关键的是把运行环境、模型类型、backend 和修复版本记录在一起。这样下一次遇到 OOM、模板错误或 structured output crash 时，可以快速判断是镜像问题、模型路径问题，还是 vLLM 内部路径的问题。
