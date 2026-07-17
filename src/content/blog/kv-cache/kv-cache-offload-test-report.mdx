@@ -1,0 +1,110 @@
+---
+title: "KV Cache Offload 测试报告：KVBM、Mooncake 与 SSD"
+description: "整理 Kvcache 测试报告中的核心结论：长上下文和多轮 coding agent 场景下 offload 的收益、KVBM 与 Mooncake 的差异，以及 SSD 的边际价值。"
+pubDate: 2026-07-17
+category: "KV Cache"
+categorySlug: "kv-cache"
+tags: ["KV Cache", "Offload", "KVBM", "Mooncake", "SSD"]
+featured: true
+series: "KV Cache Benchmark"
+seriesSlug: "kv-cache-benchmark"
+readingTime: "9 min"
+---
+
+这篇是对一次 `Kvcache测试报告` 的整理。原报告里包含多组 RPS、TPOT、TTFT 图表，这里先保留最重要的结论和实验判断，避免把图表里的曲线孤立地贴出来却失去上下文。
+
+## 测试结论
+
+总体方向很明确：在长上下文、多轮 coding agent 场景下，KV offload 的价值是成立的，而且 offload 容量越充足，越能顶住高并发。
+
+几个关键观察：
+
+- 提升 CPU offload 容量和增加 SSD offload，都会降低 TPOT、降低 TTFT，并提升 RPS。
+- CPU offload 容量开到 GPU KV Cache 的约三倍时，提升最明显。
+- 在一定配置范围内，`CPU + SSD` 相比只开启 CPU offload，额外收益大约在 5% 到 20%。
+- SSD 有收益，但真正主导效果的仍然是 CPU offload 容量和 KV 复用链路本身。
+
+换句话说，SSD 更像第二层补充，不是第一性瓶颈。第一性瓶颈仍然是：KV 能不能命中、命中后能不能低成本取回、以及 CPU offload 容量是否足够承接热数据。
+
+## KVBM 与 Mooncake
+
+在 coding agent 这种长上下文场景里，Mooncake 的表现更值得优先关注。尤其是在 CPU offload 给足之后，Mooncake 在 TPOT 和 TTFT 上都更有优势。
+
+这类场景有两个特点：
+
+- prefix 长，重复上下文多。
+- 多轮请求之间有明显的历史依赖。
+
+因此，能否把历史 KV 稳定复用起来，会直接影响首 token 延迟和整体请求排队压力。Mooncake 的优势不只是“多一层存储”，而是它在跨实例共享、远端取回和缓存路径组织上更贴近这种 workload。
+
+## Nemotron 场景的差异
+
+报告里也提到，Nemotron-Agentic-v1 这类较短、多轮客服式 tool-use 场景，和 SWE / coding agent 长上下文场景表现不一样。
+
+在 Nemotron 场景中：
+
+- Mooncake 的 TTFT 优势比较明显。
+- KVBM 在吞吐上也有自己的优势。
+- workload 更短、更偏多轮工具调用，缓存收益不完全由长 prefix 决定。
+
+这说明 KV Cache benchmark 不能只选一种数据集。长上下文 coding agent、RAG 文档问答、客服式 tool-use、多轮代码修改，这些 workload 对缓存系统的压力点并不一样。
+
+## 单实例 Offload
+
+单实例实验的结论可以概括为三点：
+
+1. 增加 CPU offload 或 SSD offload，整体会降低 TPOT 和 TTFT，并提升 RPS。
+2. CPU offload 容量不是越小越省事，容量不足时缓存复用会很快被淘汰和回源成本吃掉。
+3. 当 CPU offload 已经达到一个有效容量后，SSD 的增益更像边际优化，通常不是决定性因素。
+
+原报告中用虚线表示 `SSD = 0`，实线表示叠加 SSD 容量后的结果。这个对比方式很好，因为它把 SSD 的增量价值和 CPU offload 的基础收益分开了。
+
+## 指标怎么读
+
+我会优先看这三个指标：
+
+| 指标 | 关注点 |
+| --- | --- |
+| RPS | 系统整体承压能力，尤其适合看高并发下是否还能稳定处理请求 |
+| TPOT | decode 阶段体验，能反映缓存系统是否拖慢输出 |
+| TTFT | prefill 和缓存取回路径的核心指标，最能体现 KV 复用是否真的减少等待 |
+
+如果只看 RPS，很容易把排队和尾延迟藏起来。如果只看 TTFT，又可能忽略 decode 阶段被 offload 或远端取回拖慢。因此三者必须放在一起看。
+
+## 为什么 CPU Offload 容量重要
+
+KV Cache 复用的收益来自“避免重复计算”，但 offload 系统本身也会引入成本：
+
+- 查找 metadata。
+- 从 CPU 或远端存储取回 KV。
+- 做 chunk 粒度的 partial hit 处理。
+- 把 KV 重新挂回推理引擎可用的 layout。
+
+如果 CPU offload 容量太小，热 KV 很快被挤掉，系统就会在 miss、partial hit 和回源之间反复摇摆。容量给足以后，缓存路径才有机会稳定命中，TTFT 和 TPOT 才会一起改善。
+
+## SSD 的定位
+
+SSD 的价值主要在两个地方：
+
+- 当 CPU offload 容量不足时，作为更大的二级容量池。
+- 当 workload 有明显长尾上下文时，减少完全回源的概率。
+
+但 SSD 的延迟阶层天然比内存高，所以它不应该被当成“免费扩容”。真正适合 SSD 的，是那些不够热、不值得长期占 CPU 内存，但又可能在后续请求里复用的 KV。
+
+## Benchmark 建议
+
+后续测试可以按这条线推进：
+
+1. 固定模型、输入长度、输出长度和并发，只改变 CPU offload 容量。
+2. 在 CPU offload 容量固定后，再叠加 SSD，对比增量收益。
+3. 分别测长上下文 coding agent、RAG、Nemotron/tool-use 三类 workload。
+4. 每组同时记录 RPS、TPOT、TTFT、hit rate、partial hit ratio 和缓存淘汰次数。
+5. 把单实例和多实例共享 KV 分开测，再看 router 策略的增益。
+
+这样可以避免把“容量收益”“跨实例共享收益”“router 收益”和“SSD 增量收益”混在一起。
+
+## 小结
+
+这份测试报告最重要的判断是：KV offload 在长上下文、多轮 coding agent 场景里是值得做的；Mooncake 在这类场景下的 TTFT/TPOT 表现更有吸引力；SSD 有 5% 到 20% 的补充收益，但 CPU offload 容量和 KV 复用路径才是主因。
+
+下一步如果要把结论做实，需要把图表背后的原始数据导出成统一表格，再按 workload、缓存容量、实例数和 router 策略分层比较。
