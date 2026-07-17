@@ -1,0 +1,27 @@
+---
+title: "Dynamo on Kubernetes：第一版部署清单"
+description: "从节点标签、GPU 资源、服务拆分和观测指标开始搭一版可迭代的 Dynamo 实践环境。"
+pubDate: 2026-07-08
+category: "Kubernetes / NVIDIA Dynamo"
+categorySlug: "kubernetes-dynamo"
+tags: ["Kubernetes", "Dynamo", "GPU Scheduling"]
+featured: false
+series: "Dynamo 实践记录"
+seriesSlug: "dynamo-practice"
+readingTime: "7 min"
+---
+
+## 部署前先问的问题
+
+推理系统上 Kubernetes 后，最重要的不是 YAML 数量，而是资源边界和观测口径是否清楚。
+
+## 第一版清单
+
+- GPU 节点标签与 taint。
+- RuntimeClass、device plugin、MIG 或整卡策略。
+- 控制面、worker、cache、gateway 的服务边界。
+- Prometheus 指标和日志采集。
+
+## 结论
+
+先用最小可观测环境跑通，再谈弹性、灰度和多租户隔离。

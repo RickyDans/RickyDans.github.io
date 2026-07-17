@@ -1,0 +1,29 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+
+const projects = await getCollection('projects');
+---
+
+<Layout title="项目" description="推理系统相关项目与工具记录。">
+  <header class="page-header">
+    <p class="eyebrow">Projects</p>
+    <h1>项目</h1>
+    <p>把代码、实验工具和工程化沉淀集中放在这里。</p>
+  </header>
+  <section class="project-grid">
+    {
+      projects.map((project) => (
+        <article class="project-card">
+          <p class="eyebrow">{project.data.status}</p>
+          <h2>{project.data.title}</h2>
+          <p>{project.data.description}</p>
+          <div class="tag-row">
+            {project.data.stack.map((item) => <span>{item}</span>)}
+          </div>
+          {project.data.link && <a href={project.data.link}>项目链接</a>}
+        </article>
+      ))
+    }
+  </section>
+</Layout>

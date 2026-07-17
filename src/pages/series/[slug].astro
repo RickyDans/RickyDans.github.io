@@ -1,0 +1,30 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import PostCard from '../../components/PostCard.astro';
+import { series } from '../../data/site';
+import { sortByDate } from '../../lib/content';
+
+export function getStaticPaths() {
+  return series.map((item) => ({
+    params: { slug: item.slug },
+    props: { item }
+  }));
+}
+
+const { item } = Astro.props;
+const posts = sortByDate(
+  (await getCollection('blog')).filter((post) => !post.data.draft && post.data.seriesSlug === item.slug)
+);
+---
+
+<Layout title={item.name} description={`${item.name} 系列文章。`}>
+  <header class="page-header">
+    <p class="eyebrow">Series</p>
+    <h1>{item.name}</h1>
+    <p>这个系列会按问题、源码、实验和结论的顺序持续补齐。</p>
+  </header>
+  <section class="post-list">
+    {posts.map((post) => <PostCard post={post} />)}
+  </section>
+</Layout>

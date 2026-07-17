@@ -1,0 +1,28 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import PostCard from '../../components/PostCard.astro';
+import { sortByDate, uniqueBy } from '../../lib/content';
+
+const posts = sortByDate((await getCollection('blog')).filter((post) => !post.data.draft));
+const categories = uniqueBy(posts, (post) => post.data.categorySlug).map((post) => ({
+  name: post.data.category,
+  slug: post.data.categorySlug
+}));
+---
+
+<Layout title="文章" description="大模型推理系统相关的技术文章归档。">
+  <header class="page-header">
+    <p class="eyebrow">Blog</p>
+    <h1>文章</h1>
+    <p>按主题沉淀源码阅读、架构判断、性能分析和生产实践。</p>
+  </header>
+
+  <div class="series-strip">
+    {categories.map((category) => <a href={`/blog/category/${category.slug}/`}>{category.name}</a>)}
+  </div>
+
+  <section class="post-list">
+    {posts.map((post) => <PostCard post={post} />)}
+  </section>
+</Layout>

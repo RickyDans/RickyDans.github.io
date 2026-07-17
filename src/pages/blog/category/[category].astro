@@ -1,0 +1,31 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../../layouts/Layout.astro';
+import PostCard from '../../../components/PostCard.astro';
+import { sortByDate, uniqueBy } from '../../../lib/content';
+
+export async function getStaticPaths() {
+  const allPosts = (await getCollection('blog')).filter((post) => !post.data.draft);
+  const categories = uniqueBy(allPosts, (post) => post.data.categorySlug);
+
+  return categories.map((post) => ({
+    params: { category: post.data.categorySlug },
+    props: { categoryName: post.data.category, categorySlug: post.data.categorySlug }
+  }));
+}
+
+const { categoryName, categorySlug } = Astro.props;
+const allPosts = (await getCollection('blog')).filter((post) => !post.data.draft);
+const posts = sortByDate(allPosts.filter((post) => post.data.categorySlug === categorySlug));
+---
+
+<Layout title={categoryName} description={`${categoryName} 分类文章。`}>
+  <header class="page-header">
+    <p class="eyebrow">Category</p>
+    <h1>{categoryName}</h1>
+    <p>这个方向下的源码阅读、实验记录和工程笔记。</p>
+  </header>
+  <section class="post-list">
+    {posts.map((post) => <PostCard post={post} />)}
+  </section>
+</Layout>

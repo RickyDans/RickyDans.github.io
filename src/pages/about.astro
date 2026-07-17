@@ -1,0 +1,27 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="关于" description="关于作者和博客写作方向。">
+  <header class="page-header">
+    <p class="eyebrow">About</p>
+    <h1>关于</h1>
+    <p>这里是个人简介、研究兴趣、联系方式和写作原则的入口。</p>
+  </header>
+  <article class="article-shell prose">
+    <h2>我关注什么</h2>
+    <p>
+      我主要关注大模型推理系统的性能、稳定性和可运维性：从单卡 kernel、KV Cache 管理，
+      到跨机通信、调度系统、Kubernetes 编排和生产环境里的观测指标。
+    </p>
+    <h2>这个博客怎么写</h2>
+    <p>
+      每篇文章尽量包含问题背景、源码入口、实验数据和结论边界。能复现的实验会放到
+      Experiments；能长期展开的主题会归入 Series。
+    </p>
+    <h2>联系</h2>
+    <p>
+      把 <code>src/data/site.ts</code> 里的 GitHub 和作者信息改成你的真实信息即可。
+    </p>
+  </article>
+</Layout>

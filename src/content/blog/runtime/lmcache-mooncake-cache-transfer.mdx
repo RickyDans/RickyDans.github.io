@@ -1,0 +1,28 @@
+---
+title: "LMCache / Mooncake：KV 传输路径应该看什么"
+description: "整理 KV Cache 跨实例复用时需要观察的传输、序列化和调度指标。"
+pubDate: 2026-07-10
+category: "vLLM / LMCache / Mooncake"
+categorySlug: "runtime"
+tags: ["LMCache", "Mooncake", "KV Transfer"]
+featured: true
+series: "KV Cache Benchmark"
+seriesSlug: "kv-cache-benchmark"
+readingTime: "9 min"
+---
+
+## 核心问题
+
+KV Cache 复用能减少重复 prefill，但会引入查找、传输、校验和调度成本。
+如果只看 hit rate，很容易忽略传输链路对尾延迟的影响。
+
+## 指标
+
+- 命中率：按请求、token、prefix 长度分别统计。
+- 传输耗时：本机、跨机、跨 rack 分开看。
+- 失败路径：miss、partial hit、版本不一致、超时。
+- 收益：节省的 prefill time 是否大于传输成本。
+
+## 实验建议
+
+先构造固定 prefix 的可控 workload，再逐步加入真实长度分布和并发变化。

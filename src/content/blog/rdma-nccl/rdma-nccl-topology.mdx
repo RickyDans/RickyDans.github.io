@@ -1,0 +1,28 @@
+---
+title: "RDMA / NCCL：拓扑先于参数"
+description: "记录定位跨机集合通信问题时，为什么应该先画清楚 GPU、NIC、NUMA 和交换机拓扑。"
+pubDate: 2026-07-06
+category: "RDMA / NCCL / 通信"
+categorySlug: "rdma-nccl"
+tags: ["RDMA", "NCCL", "Topology"]
+featured: false
+series: "CUDA 通信基础"
+seriesSlug: "cuda-communication"
+readingTime: "5 min"
+---
+
+## 一个经验
+
+很多通信问题不是参数调错，而是拓扑没有被正确理解。
+GPU 到 NIC 的路径、NUMA 亲和、交换机 oversubscription 都会影响最终吞吐。
+
+## 排查顺序
+
+1. 画出节点内 GPU / NIC / CPU 拓扑。
+2. 确认跨节点链路和交换机层级。
+3. 跑 NCCL tests，记录消息大小和算法差异。
+4. 再调整 NCCL 环境变量。
+
+## 目标
+
+让每次参数调整都有拓扑解释，而不是靠经验盲试。

@@ -1,0 +1,28 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import { formatDate, sortByDate } from '../../lib/content';
+
+const experiments = sortByDate(await getCollection('experiments'));
+---
+
+<Layout title="实验" description="测试环境、脚本、原始数据和实验结论。">
+  <header class="page-header">
+    <p class="eyebrow">Experiments</p>
+    <h1>实验</h1>
+    <p>每个实验都尽量保留环境、脚本入口、数据路径和结论，方便以后复现。</p>
+  </header>
+  <section class="experiment-list">
+    {
+      experiments.map((experiment) => (
+        <article class="experiment-card">
+          <p class="eyebrow">{formatDate(experiment.data.pubDate)}</p>
+          <h2><a href={`/experiments/${experiment.id}/`}>{experiment.data.title}</a></h2>
+          <p>{experiment.data.description}</p>
+          <p><strong>测试环境：</strong>{experiment.data.environment}</p>
+          <p><strong>实验结论：</strong>{experiment.data.conclusion}</p>
+        </article>
+      ))
+    }
+  </section>
+</Layout>

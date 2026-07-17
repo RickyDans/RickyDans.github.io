@@ -1,0 +1,7 @@
+{
+  "name": "inference-notes",
+  "compatibility_date": "2026-07-17",
+  "assets": {
+    "directory": "./dist"
+  }
+}

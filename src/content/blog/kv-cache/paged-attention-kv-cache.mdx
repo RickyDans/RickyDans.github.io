@@ -1,0 +1,31 @@
+---
+title: "KV Cache：从连续内存到分页管理"
+description: "用操作系统分页的类比理解 PagedAttention 为什么能缓解 KV Cache 碎片。"
+pubDate: 2026-07-15
+category: "KV Cache"
+categorySlug: "kv-cache"
+tags: ["KV Cache", "PagedAttention", "Memory"]
+featured: true
+series: "KV Cache Benchmark"
+seriesSlug: "kv-cache-benchmark"
+readingTime: "7 min"
+---
+
+## 背景
+
+KV Cache 的大小随 batch、序列长度、层数、hidden size 增长。连续分配容易在动态请求场景里产生碎片，
+尤其是请求长度分布差异很大时。
+
+## 分页视角
+
+PagedAttention 把 token 对应的 KV 数据切成 block，再由 block table 做逻辑到物理的映射。
+这样请求看到的是连续序列，底层显存却可以用离散 block 组织。
+
+| 方案 | 优点 | 风险 |
+| --- | --- | --- |
+| 连续分配 | 访问模式简单 | 碎片和搬迁成本高 |
+| 分页 block | 复用和管理灵活 | block size 与调度策略需要调参 |
+
+## Benchmark 关注点
+
+后续实验会记录 block size、最大并发请求、prefix 命中率和显存浪费比例之间的关系。

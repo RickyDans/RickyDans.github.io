@@ -1,0 +1,103 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../layouts/Layout.astro';
+import PostCard from '../components/PostCard.astro';
+import { topics, series } from '../data/site';
+
+const posts = (await getCollection('blog'))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const latestPosts = posts.slice(0, 4);
+const featuredPosts = posts.filter((post) => post.data.featured).slice(0, 3);
+---
+
+<Layout
+  title="Inference Notes"
+  description="大模型推理、KV Cache、CUDA/GPU 通信与云原生推理系统的技术博客。"
+>
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">Inference Systems / GPU / Distributed Runtime</p>
+      <h1>记录大模型推理系统里真正值得反复咀嚼的问题。</h1>
+      <p class="hero-lead">
+        这里沉淀 vLLM、LMCache、Mooncake、NVIDIA Dynamo、KV Cache、CUDA 通信、RDMA/NCCL
+        和 Kubernetes 推理基础设施相关的源码阅读、实验记录和工程判断。
+      </p>
+      <div class="hero-actions">
+        <a class="button primary" href="/blog/">阅读文章</a>
+        <a class="button" href="/series/">查看系列</a>
+        <a class="button ghost" href="/rss.xml">RSS</a>
+      </div>
+    </div>
+    <div class="hero-visual" aria-label="推理系统拓扑示意">
+      <div class="node request">Requests</div>
+      <div class="rail"></div>
+      <div class="node scheduler">Scheduler</div>
+      <div class="node cache">KV Cache</div>
+      <div class="node gpu">GPU Blocks</div>
+      <div class="node fabric">RDMA / NCCL</div>
+      <div class="metric latency"><span>p99</span><strong>42 ms</strong></div>
+      <div class="metric hit"><span>cache hit</span><strong>78%</strong></div>
+    </div>
+  </section>
+
+  <section class="section-grid">
+    <div>
+      <div class="section-heading">
+        <p class="eyebrow">Latest</p>
+        <h2>最新文章</h2>
+      </div>
+      <div class="post-list">
+        {latestPosts.map((post) => <PostCard post={post} />)}
+      </div>
+    </div>
+
+    <aside class="profile-panel">
+      <p class="eyebrow">About</p>
+      <h2>个人简介</h2>
+      <p>
+        我关注高吞吐低延迟推理服务、GPU 内存层次、分布式通信和云原生调度。
+        这个博客会尽量把源码、指标和实验结论放在同一张桌面上讨论。
+      </p>
+      <a href="/about/">更多关于我</a>
+    </aside>
+  </section>
+
+  <section>
+    <div class="section-heading">
+      <p class="eyebrow">Featured</p>
+      <h2>精选文章</h2>
+    </div>
+    <div class="card-grid three">
+      {featuredPosts.map((post) => <PostCard post={post} compact />)}
+    </div>
+  </section>
+
+  <section>
+    <div class="section-heading">
+      <p class="eyebrow">Directions</p>
+      <h2>技术方向</h2>
+    </div>
+    <div class="topic-grid">
+      {
+        topics.map((topic) => (
+          <a class="topic-card" href={`/blog/category/${topic.slug}/`}>
+            <span>{topic.name}</span>
+            <p>{topic.description}</p>
+          </a>
+        ))
+      }
+    </div>
+  </section>
+
+  <section>
+    <div class="section-heading">
+      <p class="eyebrow">Series</p>
+      <h2>系列入口</h2>
+    </div>
+    <div class="series-strip">
+      {series.map((item) => <a href={`/series/${item.slug}/`}>{item.name}</a>)}
+    </div>
+  </section>
+</Layout>

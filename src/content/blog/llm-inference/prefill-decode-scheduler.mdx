@@ -1,0 +1,28 @@
+---
+title: "Prefill / Decode 分离下的调度问题"
+description: "从请求生命周期看推理服务里 prefill、decode、batching 和 tail latency 的关系。"
+pubDate: 2026-07-17
+category: "大模型推理"
+categorySlug: "llm-inference"
+tags: ["LLM Serving", "Scheduler", "Latency"]
+featured: true
+series: "vLLM 源码解析"
+seriesSlug: "vllm-source"
+readingTime: "8 min"
+---
+
+## 问题
+
+推理服务不是简单地把请求塞进 GPU。Prefill 更像一次重计算密集型任务，Decode 更像持续迭代的小步任务。
+当它们共享同一批 GPU 资源时，调度器需要同时考虑吞吐、首 token 延迟和尾延迟。
+
+## 观察点
+
+- Prefill batch 太大时，decode 容易被阻塞。
+- Decode step 太碎时，GPU 利用率会下降。
+- Prefix cache 命中后，请求的计算形态会发生变化。
+
+## 下一步
+
+后续可以用统一的 trace 记录每个请求进入队列、prefill 开始、first token、decode 完成的时间点，
+再和 GPU utilization、KV cache usage 一起看。

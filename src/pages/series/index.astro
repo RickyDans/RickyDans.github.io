@@ -1,0 +1,29 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import { series } from '../../data/site';
+
+const posts = (await getCollection('blog')).filter((post) => !post.data.draft);
+---
+
+<Layout title="系列" description="按长期主题组织的大模型推理系统文章系列。">
+  <header class="page-header">
+    <p class="eyebrow">Series</p>
+    <h1>系列</h1>
+    <p>把松散文章串成可持续更新的阅读路径。</p>
+  </header>
+
+  <section class="topic-grid">
+    {
+      series.map((item) => {
+        const count = posts.filter((post) => post.data.seriesSlug === item.slug).length;
+        return (
+          <a class="topic-card" href={`/series/${item.slug}/`}>
+            <span>{item.name}</span>
+            <p>{count} 篇文章，持续更新。</p>
+          </a>
+        );
+      })
+    }
+  </section>
+</Layout>

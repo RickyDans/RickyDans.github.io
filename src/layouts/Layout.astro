@@ -1,0 +1,47 @@
+---
+import '../styles/global.css';
+import { nav, site } from '../data/site';
+
+type Props = {
+  title?: string;
+  description?: string;
+};
+
+const { title = site.name, description = site.description } = Astro.props;
+const pageTitle = title === site.name ? title : `${title} | ${site.name}`;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="alternate" type="application/rss+xml" title={`${site.name} RSS`} href="/rss.xml" />
+    <title>{pageTitle}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label={`${site.name} 首页`}>
+        <span class="brand-mark">IN</span>
+        <span>{site.name}</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        {nav.map((item) => <a href={item.href}>{item.label}</a>)}
+      </nav>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <p>{site.name} · inference systems notes</p>
+      <div>
+        <a href="/rss.xml">RSS</a>
+        <a href={site.github}>GitHub</a>
+      </div>
+    </footer>
+  </body>
+</html>

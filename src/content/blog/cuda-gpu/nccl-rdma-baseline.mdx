@@ -1,0 +1,28 @@
+---
+title: "CUDA 通信实验的最小基线"
+description: "在分析 NCCL/RDMA 之前，先建立一个可重复的单机与跨机通信 baseline。"
+pubDate: 2026-07-12
+category: "CUDA / GPU"
+categorySlug: "cuda-gpu"
+tags: ["CUDA", "NCCL", "Profiling"]
+featured: false
+series: "CUDA 通信基础"
+seriesSlug: "cuda-communication"
+readingTime: "6 min"
+---
+
+## 为什么先做 baseline
+
+通信性能很容易被拓扑、NUMA、PCIe、网卡绑定、容器网络和 benchmark 参数影响。
+没有 baseline，就很难判断一次优化到底改动了哪一层。
+
+## 最小记录
+
+- GPU 型号、驱动、CUDA、NCCL 版本。
+- PCIe/NVLink 拓扑。
+- 网卡型号、RoCE/IB 模式、MTU。
+- 容器运行时和 Kubernetes 节点配置。
+
+## 输出
+
+每次实验至少保留命令、原始日志、聚合表格和结论边界。

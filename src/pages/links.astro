@@ -1,0 +1,28 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const links = [
+  { name: 'vLLM', href: 'https://github.com/vllm-project/vllm', note: '高吞吐 LLM 推理服务与 PagedAttention。' },
+  { name: 'LMCache', href: 'https://github.com/LMCache/LMCache', note: '面向 LLM serving 的 KV Cache 复用系统。' },
+  { name: 'NVIDIA Dynamo', href: 'https://github.com/ai-dynamo/dynamo', note: '面向推理服务的分布式运行时项目。' },
+  { name: 'Astro', href: 'https://astro.build', note: '这个博客使用的静态站框架。' }
+];
+---
+
+<Layout title="友情链接" description="相关项目、文档与技术社区链接。">
+  <header class="page-header">
+    <p class="eyebrow">Links</p>
+    <h1>友情链接</h1>
+    <p>放置常读项目、文档、社区和朋友博客。</p>
+  </header>
+  <section class="topic-grid">
+    {
+      links.map((link) => (
+        <a class="topic-card" href={link.href}>
+          <span>{link.name}</span>
+          <p>{link.note}</p>
+        </a>
+      ))
+    }
+  </section>
+</Layout>
