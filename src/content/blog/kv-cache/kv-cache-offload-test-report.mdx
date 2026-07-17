@@ -11,7 +11,7 @@ seriesSlug: "kv-cache-benchmark"
 readingTime: "9 min"
 ---
 
-这篇是对一次 `Kvcache测试报告` 的整理。原报告里包含多组 RPS、TPOT、TTFT 图表，这里先保留最重要的结论和实验判断，避免把图表里的曲线孤立地贴出来却失去上下文。
+这篇是对一次 `Kvcache测试报告` 的整理。原报告里的 RPS、TPOT、TTFT 图表已经全部贴在正文里，并配合测试结论一起阅读。
 
 ## 测试结论
 
@@ -25,6 +25,83 @@ readingTime: "9 min"
 - SSD 有收益，但真正主导效果的仍然是 CPU offload 容量和 KV 复用链路本身。
 
 换句话说，SSD 更像第二层补充，不是第一性瓶颈。第一性瓶颈仍然是：KV 能不能命中、命中后能不能低成本取回、以及 CPU offload 容量是否足够承接热数据。
+
+## 原始图表
+
+下面保留报告中的 13 张原始图，方便直接对照曲线看结论。
+
+### KVBM vs vLLM Baseline
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-01.png" alt="KVBM 与 vLLM baseline 的 RPS vs Inflight Concurrency 对比图" loading="lazy" />
+  <figcaption>图 1：RPS vs Inflight Concurrency，KVBM 与 vLLM baseline 对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-02.png" alt="KVBM 与 vLLM baseline 的 TPOT vs Inflight Concurrency 对比图" loading="lazy" />
+  <figcaption>图 2：TPOT vs Inflight Concurrency，KVBM 与 vLLM baseline 对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-03.png" alt="KVBM 与 vLLM baseline 的 TTFT vs Inflight Concurrency 对比图" loading="lazy" />
+  <figcaption>图 3：TTFT vs Inflight Concurrency，KVBM 与 vLLM baseline 对比。</figcaption>
+</figure>
+
+### Mooncake / Offload Baseline
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-04.png" alt="Mooncake offload baseline 的 RPS vs Inflight Concurrency 对比图" loading="lazy" />
+  <figcaption>图 4：RPS vs Inflight Concurrency，Mooncake / offload baseline 对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-07.png" alt="Mooncake offload baseline 的 TPOT vs Inflight Concurrency 对比图" loading="lazy" />
+  <figcaption>图 5：TPOT vs Inflight Concurrency，Mooncake / offload baseline 对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-05.png" alt="Mooncake offload baseline 的 TTFT vs Inflight Concurrency 对比图" loading="lazy" />
+  <figcaption>图 6：TTFT vs Inflight Concurrency，Mooncake / offload baseline 对比。</figcaption>
+</figure>
+
+### KVBM vs Mooncake：无 SSD 与开启 SSD
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-06.png" alt="SSD 为 0 时 KVBM 与 Mooncake 的 TTFT vs Inflight 对比图" loading="lazy" />
+  <figcaption>图 7：TTFT vs Inflight，SSD=0 时 KVBM 与 Mooncake 对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-10.png" alt="SSD 为 0 时 KVBM 与 Mooncake 的 TPOT vs Inflight 对比图" loading="lazy" />
+  <figcaption>图 8：TPOT vs Inflight，SSD=0 时 KVBM 与 Mooncake 对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-08.png" alt="开启 SSD 后 KVBM 与 Mooncake 的 TTFT vs Inflight 对比图" loading="lazy" />
+  <figcaption>图 9：TTFT vs Inflight，开启 SSD 后 KVBM 与 Mooncake 对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-11.png" alt="开启 SSD 后 KVBM 与 Mooncake 的 TPOT vs Inflight 对比图" loading="lazy" />
+  <figcaption>图 10：TPOT vs Inflight，开启 SSD 后 KVBM 与 Mooncake 对比。</figcaption>
+</figure>
+
+### Nemotron-Agentic-v1 / Top2000
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-12.png" alt="Nemotron Top2000 场景中 SSD 为 0 时 KVBM 与 Mooncake 的 RPS vs Inflight 对比图" loading="lazy" />
+  <figcaption>图 11：RPS vs Inflight，SSD=0，KVBM 与 Mooncake 在 Nemotron Top2000 场景下对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-09.png" alt="Nemotron Top2000 场景中 SSD 为 0 时 KVBM 与 Mooncake 的 TPOT vs Inflight 对比图" loading="lazy" />
+  <figcaption>图 12：TPOT vs Inflight，SSD=0，KVBM 与 Mooncake 在 Nemotron Top2000 场景下对比。</figcaption>
+</figure>
+
+<figure>
+  <img src="/images/kv-cache-offload-report/fig-13.png" alt="Nemotron Top2000 场景中开启 SSD 后 KVBM 与 Mooncake 的 RPS vs Inflight 对比图" loading="lazy" />
+  <figcaption>图 13：RPS vs Inflight，开启 SSD 后 KVBM 与 Mooncake 在 Nemotron Top2000 场景下对比。</figcaption>
+</figure>
 
 ## KVBM 与 Mooncake
 
